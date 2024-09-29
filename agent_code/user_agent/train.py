@@ -34,16 +34,17 @@ def setup_training(self):
         )
 #possible: also saving epsilon if we'd want to change it for encouraging learning of new tasks
   
-    model_path = "coin_model_weights.pt"  #name of file where our model weights are saved!
+    ''' model_path = "coin_model_weights.pt"  #name of file where our model weights are saved!
     
     self.logger.info(f"please wait: loading the pre-trained model from {model_path}")
     checkpoint = torch.load(model_path)
     self.training_agent.q_eval.load_state_dict(checkpoint['q_eval_state_dict'])
     self.training_agent.q_next.load_state_dict(checkpoint['q_next_state_dict'])
     self.training_agent.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    self.logger.info("pre-trained model loaded!")
+    self.logger.info("pre-trained model loaded!")'''
     self.memory = self.training_agent.memory
 
+#Collecting and defining events, in order to give rewards for certain behaviour of our agent
 def game_events_occurred(self, old_game_state, self_action, new_game_state, events):
     """
     intermediate rewards for game events like coin collection or walking away from a coin.
@@ -87,6 +88,9 @@ def game_events_occurred(self, old_game_state, self_action, new_game_state, even
         }, "coin_model_weights.pt")
     self.training_agent.storetransition(state, action, reward, new_state, False) #now: we train our agent based on the transitions stored
     self.training_agent.learn()
+
+# So reaching step 400 results in the game finishing and saving all needed values for the
+# Q-learning algorithm
 def end_of_round(self, last_game_state, last_action, events):
     """
     this function gets called end of every game for final rewards calc + training
@@ -159,6 +163,12 @@ def manhatten_dist(pos1, pos2):
     """
     return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
 
+
+# :param game_state: state of the game
+# :param position: current position of the player or any other coordinate
+# output: gives a list of possible directions, to get to the nearest coin. We give a list
+#         because there is the possibility, that two coins are the closest, so going into each direction
+#         should result in getting points for WALKING_TOWARDS_COIN
 def bfs_find_nearest_coin(game_state, position):
     """
     function using breadth-first-search : finding shortest paths - to nearest coins, it returns list of all possible 1st moves towards nearest coins
@@ -170,7 +180,8 @@ def bfs_find_nearest_coin(game_state, position):
         return None 
     if start_pos in coins:
         return []
-#if there are coins on the board, only then will it spend precious computing resources for computing the first moves
+    #if there are coins on the board, only then will it spend 
+    #precious computing resources for computing the first moves
     # we want directions mapping: action name to movement (dx, dy)
     directions = {'UP': (0, 1), 'DOWN': (0, -1), 'LEFT': (-1, 0), 'RIGHT': (1, 0)}
     reverse_directions = {(0, 1): 'UP', (0, -1): 'DOWN', (-1, 0): 'LEFT', (1, 0): 'RIGHT'}
@@ -196,6 +207,10 @@ def bfs_find_nearest_coin(game_state, position):
                 queue.append((new_pos, path + [new_pos]))  
     return nearest_coins_moves if nearest_coins_moves else None 
 
+
+# :param game_state: state of the game
+# :param position: current position of the player or any other coordinate
+# output: checks, whether there is a wall or crate blokcing the way, resulting in an invalid action
 def is_valid_move(game_state, position):
     """
     With this function, we aim to check if a move is valid
