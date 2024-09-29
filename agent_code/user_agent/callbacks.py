@@ -29,7 +29,7 @@ def setup(self):
         batch_size=32
     )
 
-    if self.train:
+    '''if self.train:
         self.logger.info("Loading model from saved state")
         checkpoint = torch.load("coin_model_weights.pt", map_location=self.training_agent.device)
 #loading our saved model weights
@@ -42,7 +42,7 @@ def setup(self):
         if 'epsilon' in checkpoint:
             self.training_agent.epsilon = checkpoint['epsilon']
         if 'learn_step_counter' in checkpoint:
-            self.training_agent.learn_step_counter = checkpoint['learn_step_counter']
+            self.training_agent.learn_step_counter = checkpoint['learn_step_counter']'''
 
 
 def act(self, game_state: dict) -> str:

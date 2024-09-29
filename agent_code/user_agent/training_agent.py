@@ -7,7 +7,8 @@ import os
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
-#we want to apply transformations to input tensor and use Pytorch for the same.
+#Idea: Use the 8 symmetries of the states, to compute the best action you can choose from
+
 def mirror(input_tensor):
     """function that would mirror input tensor : horizontally..."""
     return torch.flip(input_tensor, dims=[-1])
@@ -21,8 +22,11 @@ def rotate_180(input_tensor):
 def rotate_270(input_tensor):
     """function thst would rotate input tensor by : 270 degrees..."""
     return torch.rot90(input_tensor, 3, dims=[-2, -1])
-#now we define functions for state preprocessing.
+
+
 def state_to_features(game_state: dict) -> torch.Tensor:
+    # :param game_state: Giving him the whole info of the game in each step.
+    # :output: returns a 4D-array that you can later on insert to the neural network
     """
     function that helps convert the game state to input format for our neural network
     """
@@ -40,7 +44,8 @@ def state_to_features(game_state: dict) -> torch.Tensor:
         for coin in game_state['coins']:
 
             coin_board[coin] = 1
-            #here first, we stack along the 1st axis, then normalize state, convert it to pytorch tensor and then add a batch dimension
+            #here first, we stack along the 1st axis, then normalize state, 
+            #convert it to pytorch tensor and then add a batch dimension
             #fornmat is NCHW is ensured.
     state = np.stack([player_board, coin_board, field], axis=0).astype(np.float32) 
     state = (state - state.mean()) / (state.std() + 1e-8)
@@ -48,7 +53,11 @@ def state_to_features(game_state: dict) -> torch.Tensor:
     state = state.unsqueeze(0)
     return state
 
-def state_to_features_2(game_state: dict) -> torch.Tensor: #experimenting with difference in implemetations
+#experimenting with different states which results in differently trained agents
+
+def state_to_features_2(game_state: dict) -> torch.Tensor:
+    # :param game_state: Giving him the whole info of the game in each step.
+    # :output: returns a 4D-array that you can later on insert to the neural network
     """
     An alternative state preprocessing function?
     """
@@ -79,7 +88,7 @@ def state_to_features_2(game_state: dict) -> torch.Tensor: #experimenting with d
 
     return state
 
-#for replay buffer class
+#Class for our memory that we need to train our agent using the DeepQNetwork method
 '''class ReplayBuffer:
     def __init__(self, maxsize):
             self.mem_size = maxsize
@@ -89,27 +98,27 @@ def state_to_features_2(game_state: dict) -> torch.Tensor: #experimenting with d
             self.terminal_memory = np.zeros(self.mem_size, dtype=bool)
             self.state_memory = np.zeros((self.mem_size, 7, 17, 17), dtype=np.float32)
             self.new_state_memory = np.zeros((self.mem_size, 7, 17, 17), dtype=np.float32)
-def storetransitions(self, state, action, reward, new_state, done):
-        index = self.mem_counter % self.mem_size
-        self.state_memory[index] = state.cpu().numpy()
-        self.actions_memory[index] = action
-        self.reward_memory[index] = reward
+    def storetransitions(self, state, action, reward, new_state, done):
+            index = self.mem_counter % self.mem_size
+            self.state_memory[index] = state.cpu().numpy()
+            self.actions_memory[index] = action
+            self.reward_memory[index] = reward
 
-        if new_state is not None:
-        
-            self.new_state_memory[index] = new_state.cpu().numpy()
-        self.terminal_memory[index] = done
-        self.mem_counter += 1
-def samp_buffer(self, batch_size):
-        max_mem = min(self.mem_counter, self.mem_size)
-        batch = np.random.choice(max_mem, batch_size, replace=False)
-        states = torch.tensor(self.state_memory[batch]).float()
-                actions = torch.tensor(self.actions_memory[batch]).long()
-                rewards = torch.tensor(self.reward_memory[batch]).float()
-                new_states = torch.tensor(self.new_state_memory[batch]).float()
+            if new_state is not None:
+            
+                self.new_state_memory[index] = new_state.cpu().numpy()
+            self.terminal_memory[index] = done
+            self.mem_counter += 1
+    def samp_buffer(self, batch_size):
+            max_mem = min(self.mem_counter, self.mem_size)
+            batch = np.random.choice(max_mem, batch_size, replace=False)
+            states = torch.tensor(self.state_memory[batch]).float()
+                    actions = torch.tensor(self.actions_memory[batch]).long()
+                    rewards = torch.tensor(self.reward_memory[batch]).float()
+                    new_states = torch.tensor(self.new_state_memory[batch]).float()
 
-                dones = torch.tensor(self.terminal_memory[batch]).bool()
-                return states, actions, rewards, new_states, dones'''
+                    dones = torch.tensor(self.terminal_memory[batch]).bool()
+                    return states, actions, rewards, new_states, dones'''
 
 #for prioritized replay buffer?
 # why we need it: it would initialize buffer with a max size to simulate experiences 
@@ -300,28 +309,28 @@ class SymmetricQNetwork(nn.Module):
         # action mapping will help us handleing rotations/mirroring for each action
         # here we assume 8 transformations: original, mirror, rotate_90, mirror+rotate_90, rotate_180, mirror+rotate_180, rotate_270, mirror+rotate_270
         self.mapping = torch.tensor([
-            [0, 0, 3, 3, 2, 2, 1, 1],  # for action 0, 1, 2, 3, ,4 ....
+            [0, 0, 3, 3, 2, 2, 1, 1],  # for action 0, 1, 2, 3, ,4 ...
             [1, 3, 0, 2, 3, 1, 2, 0],  
             [2, 2, 1, 1, 0, 0, 3, 3],  
             [3, 1, 2, 0, 1, 3, 0, 2], 
             [4, 4, 4, 4, 4, 4, 4, 4]  
-            #[5, 5, 5, 5, 5, 5, 5, 5]   
         ])
 
     def forward(self, state):
         '''Forward pass applies all transformations to state-> gets Q-values-> averages them considering action mappings'''
+        #Saving all possible combinations of symmetries
         states = [
-            state,  # original
-            mirror(state),  # mirrored
-            rotate_90(state),  # 90degree rotation
-            mirror(rotate_90(state)),  # mirrored after 90degree rotation
-            rotate_180(state),  # 180degree rotation
-            mirror(rotate_180(state)),  # mirrored after 180degree rotation
-            rotate_270(state),  # 270-degree rotation
-            mirror(rotate_270(state))  #  mirrored after 270degree rotation
+            state, 
+            mirror(state),  
+            rotate_90(state), 
+            mirror(rotate_90(state)), 
+            rotate_180(state), 
+            mirror(rotate_180(state)), 
+            rotate_270(state), 
+            mirror(rotate_270(state))  
         ]
 
-  #we stack transformations, pass through the q-network, and sepeate q-values for each
+        #we stack transformations, pass through the q-network, and sepeate q-values for each
         states = torch.cat(states, dim=0)
         q_values = self.q_network(states)
         q_values = q_values.view(8, state.size(0), -1)  #(8, batch_size, n_actions)
@@ -332,7 +341,9 @@ class SymmetricQNetwork(nn.Module):
             q_output.append(q_mean_for_action)
         # back into final Q-value predictions
         q_output = torch.cat(q_output, dim=-1)
+
         return q_output
+
 class Training_Agent:
     '''to initialize training agent with networks, optimizer, 
     replay buffer... & other hyperparameters'''
@@ -358,7 +369,6 @@ class Training_Agent:
 
         self.optimizer = optim.Adam(self.q_eval.parameters(), lr=lr_rate)
         self.loss = nn.MSELoss()
-
 
         self.memory = prioritized_replaybuffer(mem_size)
 #tensorboard integration for better monitoring!
@@ -442,6 +452,8 @@ class Training_Agent:
         for target_param, source_param in zip(target.parameters(), source.parameters()):
             target_param.data.copy_(self.tau * source_param.data + (1.0 - self.tau) * target_param.data)
 
+# :param reward_list: Give a list of all rewards fpr each step
+# :param N: Computes the average of the last N rewards
 def calculate_average_reward(reward_list, N):
     """to calculate avg reward from last N rewards in the reward list"""
     if len(reward_list) >= N:
